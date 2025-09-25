@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // service role para tener acceso a password_hash
-);
+import { supabaseServer } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   try {
@@ -21,7 +16,7 @@ export async function POST(req: Request) {
     }
 
     // Buscar usuario en la tabla `users`
-    const { data: user, error } = await supabase
+    const { data: user, error } = await supabaseServer
       .from("users")
       .select("id, email, password_hash, tenant_id, role_id, is_active")
       .eq("email", email)
