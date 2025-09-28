@@ -36,6 +36,8 @@ export async function POST(req: Request) {
       );
     }
 
+    console.log(user);
+    
     // Verificar contraseña
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
