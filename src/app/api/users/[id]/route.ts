@@ -9,7 +9,10 @@ import { JWTPayload } from "@/types/auth";
 type Params = { params: { id: string } };
 
 // ========== GET ==========
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
   try {
     const tenantId = resolveTenantId(req);
     if (!tenantId) {
@@ -19,9 +22,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       );
     }
 
-      const { id } = await context.params; // ✅ await
-      console.log("GET /api/users/:id", { id, tenantId });
-
+    const { id } = await context.params; // ✅ await
+    console.log("GET /api/users/:id", { id, tenantId });
 
     const { data, error } = await supabaseAdmin
       .from("users")
@@ -47,7 +49,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 }
 
 // ========== PUT ==========
-export async function PUT(req: NextRequest, context: { params: Promise<{id: string}> }) {
+export async function PUT(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
   try {
     const tenantId = resolveTenantId(req);
     if (!tenantId) {
@@ -61,10 +66,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{id: stri
     const token = req.cookies.get("token")?.value;
     const decoded = token ? verifyToken<JWTPayload>(token) : null;
     if (!decoded || decoded.role_id !== "ADMIN") {
-      return NextResponse.json(
-        { error: "No autorizado" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const { id } = await context.params;
@@ -114,7 +116,7 @@ export async function PUT(req: NextRequest, context: { params: Promise<{id: stri
   }
 }
 
-// ========== DELETE ==========
+
 // ========== DELETE ==========
 export async function DELETE(
   req: NextRequest,
@@ -133,10 +135,7 @@ export async function DELETE(
     const token = req.cookies.get("token")?.value;
     const decoded = token ? verifyToken<JWTPayload>(token) : null;
     if (!decoded) {
-      return NextResponse.json(
-        { error: "No autenticado" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
     // 🔹 Consultar el rol del usuario autenticado
@@ -144,48 +143,64 @@ export async function DELETE(
       .from("user_roles")
       .select("code")
       .eq("id", decoded.role_id)
-      .eq("tenant_id", decoded.tenant_id) // seguridad extra: rol del mismo tenant
+      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
       .single();
 
-      console.log(role);
-      console.log(decoded);
-      
-      
-
     if (roleError || !role) {
-      return NextResponse.json(
-        { error: "Rol no encontrado" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Rol no encontrado" }, { status: 403 });
     }
 
     // 🔹 Validar que el rol sea ADMIN
     if (role.code !== "admin") {
-      return NextResponse.json(
-        { error: "No autorizado" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     // 🔹 Proceder con el borrado
     const { id } = await context.params;
-    const { error } = await supabaseAdmin
+
+    const { error, data, count } = await supabaseAdmin
       .from("users")
       .delete()
       .eq("id", id)
-      .eq("tenant_id", tenantId);
+      .eq("tenant_id", tenantId)
+      .select("*"); // para ver si devuelve algo
 
-    if (error) throw error;
+    console.log({ error, data });
 
-    // Registrar auditoría
-    await supabaseAdmin.from("audit_logs").insert({
-      tenant_id: tenantId,
-      user_id: decoded.sub,
-      action: "DELETE",
-      resource: "users",
-      resource_id: id,
-      payload: null,
-    });
+    if (error) {
+      return NextResponse.json(
+        { error: "Error al eliminar usuario" },
+        { status: 404 }
+      );
+    }
+
+    const { error: auditError } = await supabaseAdmin
+      .from("audit_logs")
+      .insert({
+        tenant_id: tenantId,
+        user_id: decoded.sub, // el admin que ejecuta
+        action: "delete",
+        resource: "users",
+        resource_id: id, // el usuario eliminado
+        payload: {
+          deleted_user_id: id,
+          deleted_by: decoded.email,
+          deleted_role: role.code,
+          deleted_at: new Date().toISOString(),
+          detail: `Usuario ${id} eliminado por administrador ${decoded.email}`,
+        },
+      });
+
+    if (auditError) {
+      console.error("Error audit log:", auditError);
+    }
+
+    if (auditError) {
+      return NextResponse.json(
+        { error: "Error registro de auditoría" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
