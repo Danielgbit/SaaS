@@ -6,7 +6,7 @@ import {
   listUsersSchema,
   createUserSchema,
   parseSort,
-} from "@/lib/utils/validation";
+} from "@/lib/utils/validations/users";
 import { verifyToken } from "@/lib/auth/jwt";
 import { JWTPayload } from "@/types/auth";
 
@@ -66,13 +66,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Create user (only ADMIN)
 export async function POST(req: NextRequest) {
   try {
-    // 1) Validar body
     const body = await req.json();
     const payload = createUserSchema.parse(body);
 
-    // 2) Resolver tenantId desde JWT (más seguro que confiar en body)
     const tenantId = resolveTenantId(req);
     if (!tenantId) {
       return NextResponse.json(
@@ -81,22 +80,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3) Validar permisos: solo ADMIN del tenant puede crear usuarios
     const token = req.cookies.get("token")?.value;
-      const decoded = token ? verifyToken<JWTPayload>(token) : null;    if (!decoded || decoded.role_id !== "ADMIN") {
-      return NextResponse.json(
-        { error: "No autorizado" },
-        { status: 403 }
-      );
+    const decoded = token ? verifyToken<JWTPayload>(token) : null;
+    if (!decoded) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    // 4) Insertar usuario
-    const { data, error } = await supabaseAdmin
+    // 🔹 Validar que sea ADMIN
+    const { data: role } = await supabaseAdmin
+      .from("user_roles")
+      .select("code")
+      .eq("id", decoded.role_id)
+      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
+      .single();
+
+    if (!role || role.code !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    // Verificar que el role_id a asignar exista y esté disponible para el tenant
+    if (payload.role_id) {
+      const { data: roleToAssign } = await supabaseAdmin
+        .from("user_roles")
+        .select("id")
+        .eq("id", payload.role_id)
+        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        .single();
+
+      if (!roleToAssign) {
+        return NextResponse.json(
+          { error: "El role_id proporcionado no es válido o no existe" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 🔹 Hash contraseña si viene
+    let password_hash = null;
+    if (payload.password_hash) {
+      const bcrypt = await import("bcryptjs");
+      password_hash = await bcrypt.hash(payload.password_hash, 10);
+    }
+
+    const { data, error: insertError } = await supabaseAdmin
       .from("users")
       .insert({
         tenant_id: tenantId,
         email: payload.email,
-        password_hash: payload.password_hash ?? null,
+        password_hash,
         name: payload.name ?? null,
         role_id: payload.role_id ?? null,
         phone: payload.phone ?? null,
@@ -105,19 +136,26 @@ export async function POST(req: NextRequest) {
       .select("*")
       .single();
 
-    if (error) throw error;
+    if (insertError) {
+      return NextResponse.json(
+        { error: "Error al crear usuario" },
+        { status: 500 }
+      );
+    }
 
-    // 5) Auditoría
     await supabaseAdmin.from("audit_logs").insert({
       tenant_id: tenantId,
-      user_id: decoded?.sub ?? null,
+      user_id: decoded.sub ?? null,
       action: "CREATE",
       resource: "users",
       resource_id: data.id,
-      payload: { email: data.email },
+      payload: {
+        email: data.email,
+        role_id: data.role_id,
+        name: data.name,
+      },
     });
 
-    // 6) Responder
     return NextResponse.json({ data }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(

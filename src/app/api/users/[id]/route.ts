@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { resolveTenantId } from "@/lib/tenancy/resolveTenantId";
-import { updateUserSchema } from "@/lib/utils/validation";
+import { updateUserSchema } from "@/lib/utils/validations/users";
 import { verifyToken } from "@/lib/auth/jwt";
 import { JWTPayload } from "@/types/auth";
 
@@ -62,23 +62,77 @@ export async function PUT(
       );
     }
 
-    // Validar rol ADMIN
+    // 🔹 Extraer y validar token
     const token = req.cookies.get("token")?.value;
     const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded || decoded.role_id !== "ADMIN") {
+    if (!decoded) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+
+    // 🔹 Consultar rol real
+    const { data: role } = await supabaseAdmin
+      .from("user_roles")
+      .select("code")
+      .eq("id", decoded.role_id)
+      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
+      .single();
+
+    if (!role || role.code !== "admin") {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
+    // 🔹 Extraer params
     const { id } = await context.params;
 
+    // 🔹 Verificar que el usuario exista antes de actualizar
+    const { data: existingUser } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("id", id)
+      .eq("tenant_id", tenantId)
+      .single();
+
+    if (!existingUser) {
+      return NextResponse.json(
+        { error: "Usuario no encontrado" },
+        { status: 404 }
+      );
+    }
+
+    // 🔹 Validar body
     const body = await req.json();
     const payload = updateUserSchema.parse(body);
 
+    // 🔹 Verificar que el role_id a asignar exista y sea válido para el tenant
+    if (payload.role_id) {
+      const { data: roleToAssign } = await supabaseAdmin
+        .from("user_roles")
+        .select("id")
+        .eq("id", payload.role_id)
+        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        .single();
+
+      if (!roleToAssign) {
+        return NextResponse.json(
+          { error: "El role_id proporcionado no es válido o no existe" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 🔹 Hash de password si viene
+    let password_hash: string | undefined = undefined;
+    if (payload.password_hash) {
+      const bcrypt = await import("bcryptjs");
+      password_hash = await bcrypt.hash(payload.password_hash, 10);
+    }
+
+    // 🔹 Actualizar usuario
     const { data, error } = await supabaseAdmin
       .from("users")
       .update({
-        email: payload.email,
-        password_hash: payload.password_hash ?? undefined,
+        email: payload.email ?? undefined,
+        password_hash,
         name: payload.name ?? undefined,
         role_id: payload.role_id ?? undefined,
         phone: payload.phone ?? undefined,
@@ -91,20 +145,15 @@ export async function PUT(
       .single();
 
     if (error) throw error;
-    if (!data) {
-      return NextResponse.json(
-        { error: "Usuario no encontrado" },
-        { status: 404 }
-      );
-    }
 
+    // 🔹 Log de auditoría
     await supabaseAdmin.from("audit_logs").insert({
       tenant_id: tenantId,
       user_id: decoded?.sub ?? null,
       action: "UPDATE",
       resource: "users",
       resource_id: id,
-      payload: payload,
+      payload,
     });
 
     return NextResponse.json({ data });
@@ -115,7 +164,6 @@ export async function PUT(
     );
   }
 }
-
 
 // ========== DELETE ==========
 export async function DELETE(
