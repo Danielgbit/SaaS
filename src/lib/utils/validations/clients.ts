@@ -10,3 +10,14 @@ export const createClientSchema = z.object({
   notes: z.string().optional().nullable(),
   is_active: z.boolean().optional(),
 });
+
+
+export const updateClientSchema = z.object({
+  name: z.string().optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  document_id: z.string().optional(),
+  birth_date: z.string().optional(), // formato ISO (ej: "1990-05-20")
+  notes: z.string().optional(),
+  is_active: z.boolean().optional(),
+});

@@ -1,3 +1,4 @@
+// src/lib/auth/permissions.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import { verifyToken } from './jwt';
 

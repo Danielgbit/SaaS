@@ -29,15 +29,22 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!user.is_active) {
-      return NextResponse.json(
-        { error: "Usuario inactivo" },
-        { status: 403 }
-      );
+    const { data: userRoles, error: rolesError } = await supabaseServer
+      .from("user_roles")
+      .select("code")
+      .eq("id", user.role_id)
+      .single();
+
+    if (rolesError) {
+      return NextResponse.json({
+        message: "Error al obtener roles de usuario",
+        status: 404,
+      });
     }
 
-    console.log(user);
-    
+    if (!user.is_active) {
+      return NextResponse.json({ error: "Usuario inactivo" }, { status: 403 });
+    }
     // Verificar contraseña
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
@@ -53,6 +60,7 @@ export async function POST(req: Request) {
       email: user.email,
       tenant_id: user.tenant_id,
       role_id: user.role_id,
+      role: userRoles?.code || null,
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET!, {

@@ -1,3 +1,4 @@
+// src/lib/auth/jwt.ts
 import { JWTPayload as JWTProps } from "@/types/auth";
 import jwt from "jsonwebtoken";
 

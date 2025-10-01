@@ -140,12 +140,11 @@ export async function GET(req: NextRequest) {
     }
 
     const allowedRoles = ["admin", "tenant_owner"];
-    if (
-      !(
-        allowedRoles.includes(role.code) &&
-        (role.tenant_id === null || role.tenant_id === tenantId)
-      )
-    ) {
+    const isAllowed =
+      allowedRoles.includes(role.code) &&
+      (role.tenant_id === null || role.tenant_id === tenantId);
+
+    if (!isAllowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
