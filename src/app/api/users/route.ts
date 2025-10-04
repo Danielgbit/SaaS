@@ -1,30 +1,19 @@
 // app/api/users/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
-import { resolveTenantId } from "@/lib/tenancy/resolveTenantId";
 import {
   listUsersSchema,
   createUserSchema,
   parseSort,
 } from "@/lib/utils/validations/users";
-import { verifyToken } from "@/lib/auth/jwt";
-import { JWTPayload } from "@/types/auth";
+import { withTenant } from "@/lib/auth/withTenant";
 
-export async function GET(req: NextRequest) {
+async function getUsers(req: NextRequest, tenantId: string) {
   try {
     // 1) Validar query params
     const url = new URL(req.url);
     const qs = Object.fromEntries(url.searchParams.entries());
     const parsed = listUsersSchema.parse(qs);
-
-    // 2) Resolver tenantId (JWT > query > header)
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenantId requerido" },
-        { status: 400 }
-      );
-    }
 
     // 3) Paginación y orden
     const { page, limit, search, sort } = parsed;
@@ -67,31 +56,20 @@ export async function GET(req: NextRequest) {
 }
 
 // Create user (only ADMIN)
-export async function POST(req: NextRequest) {
+export async function createUser(req: NextRequest, tenantId: string) {
   try {
     const body = await req.json();
     const payload = createUserSchema.parse(body);
 
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenantId requerido" },
-        { status: 400 }
-      );
-    }
-
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
+    const roleId = req.headers.get("x-role-id");
+    const userId = req.headers.get("x-user-id");
 
     // 🔹 Validar que sea ADMIN
     const { data: role } = await supabaseAdmin
       .from("user_roles")
       .select("code")
-      .eq("id", decoded.role_id)
-      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
+      .eq("id", roleId)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       .single();
 
     if (!role || role.code !== "admin") {
@@ -145,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     await supabaseAdmin.from("audit_logs").insert({
       tenant_id: tenantId,
-      user_id: decoded.sub ?? null,
+      user_id: userId ?? null,
       action: "CREATE",
       resource: "users",
       resource_id: data.id,
@@ -164,3 +142,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withTenant(getUsers);
+export const POST = withTenant(createUser)

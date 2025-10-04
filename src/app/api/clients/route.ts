@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { verifyToken } from "@/lib/auth/jwt";
 import { JWTPayload } from "@/types/auth";
-import { resolveTenantId } from "@/lib/tenancy/resolveTenantId";
+import { resolveTenantId } from "@/lib/auth/resolveTenantId";
 import { createClientSchema } from "@/lib/utils/validations/clients";
 
 // ========== POST: Create Client ==========

@@ -1,29 +1,22 @@
 // app/api/users/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
-import { resolveTenantId } from "@/lib/tenancy/resolveTenantId";
 import { updateUserSchema } from "@/lib/utils/validations/users";
 import { verifyToken } from "@/lib/auth/jwt";
 import { JWTPayload } from "@/types/auth";
+import { withTenant } from "@/lib/auth/withTenant";
 
 type Params = { params: { id: string } };
 
 // ========== GET ==========
-export async function GET(
+export async function getUserById(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string}> },
+  tenantId: string
 ) {
   try {
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenantId requerido" },
-        { status: 400 }
-      );
-    }
-
     const { id } = await context.params; // ✅ await
-    console.log("GET /api/users/:id", { id, tenantId });
+
 
     const { data, error } = await supabaseAdmin
       .from("users")
@@ -49,19 +42,12 @@ export async function GET(
 }
 
 // ========== PUT ==========
-export async function PUT(
+export async function updateUser(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
+  tenantId: string | undefined
 ) {
   try {
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenantId requerido" },
-        { status: 400 }
-      );
-    }
-
     // 🔹 Extraer y validar token
     const token = req.cookies.get("token")?.value;
     const decoded = token ? verifyToken<JWTPayload>(token) : null;
@@ -166,32 +152,20 @@ export async function PUT(
 }
 
 // ========== DELETE ==========
-export async function DELETE(
+export async function deleteUser(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
+  tenantId: string
 ) {
   try {
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenantId requerido" },
-        { status: 400 }
-      );
-    }
-
-    // Extraer y verificar token
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
+    const roleId = req.headers.get("x-role-id");
+    const userId = req.headers.get("x-user-id");
     // 🔹 Consultar el rol del usuario autenticado
     const { data: role, error: roleError } = await supabaseAdmin
       .from("user_roles")
       .select("code")
-      .eq("id", decoded.role_id)
-      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
+      .eq("id", roleId)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       .single();
 
     if (roleError || !role) {
@@ -213,8 +187,6 @@ export async function DELETE(
       .eq("tenant_id", tenantId)
       .select("*"); // para ver si devuelve algo
 
-    console.log({ error, data });
-
     if (error) {
       return NextResponse.json(
         { error: "Error al eliminar usuario" },
@@ -226,16 +198,14 @@ export async function DELETE(
       .from("audit_logs")
       .insert({
         tenant_id: tenantId,
-        user_id: decoded.sub, // el admin que ejecuta
+        user_id: userId, // el admin que ejecuta
         action: "delete",
         resource: "users",
         resource_id: id, // el usuario eliminado
         payload: {
           deleted_user_id: id,
-          deleted_by: decoded.email,
           deleted_role: role.code,
           deleted_at: new Date().toISOString(),
-          detail: `Usuario ${id} eliminado por administrador ${decoded.email}`,
         },
       });
 
@@ -258,3 +228,8 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withTenant(getUserById);
+export const PUT = withTenant(updateUser);
+export const DELETE = withTenant(deleteUser);
+

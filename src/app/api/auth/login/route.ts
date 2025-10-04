@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { supabaseServer } from "@/lib/supabase/server";
+import { signToken } from "@/lib/auth/jwt";
 
 export async function POST(req: Request) {
   try {
@@ -63,9 +64,8 @@ export async function POST(req: Request) {
       role: userRoles?.code || null,
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET!, {
-      expiresIn: "7d",
-    });
+    //Firmar y crear el token
+    const token = signToken(payload);
 
     // Guardar token en cookies httpOnly
     (await cookies()).set("token", token, {
