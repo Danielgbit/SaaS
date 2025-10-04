@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { supabaseServer } from "@/lib/supabase/server";
 import { signToken } from "@/lib/auth/jwt";
+import { setAuthCookie } from "@/lib/auth/cookies";
 
 export async function POST(req: Request) {
   try {
@@ -67,14 +66,7 @@ export async function POST(req: Request) {
     //Firmar y crear el token
     const token = signToken(payload);
 
-    // Guardar token en cookies httpOnly
-    (await cookies()).set("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 60 * 60 * 24 * 7, // 7 días
-      path: "/",
-    });
+    await setAuthCookie(token);
 
     return NextResponse.json({ message: "Login exitoso", user: payload });
   } catch (err: any) {
