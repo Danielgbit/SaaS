@@ -6,9 +6,9 @@ import {
   createUserSchema,
   parseSort,
 } from "@/lib/utils/validations/users";
-import { withTenant } from "@/lib/auth/withAuthTenant";
+import { getAuthUser } from "@/lib/auth/authUser";
 
-async function getUsers(req: NextRequest, tenantId: string) {
+export async function GET(req: NextRequest) {
   try {
     // 1) Validar query params
     const url = new URL(req.url);
@@ -21,11 +21,12 @@ async function getUsers(req: NextRequest, tenantId: string) {
     const from = (page - 1) * limit;
     const to = page * limit - 1;
 
+    const user = await getAuthUser();
     // 4) Construir consulta
     let query = supabaseAdmin
       .from("users")
       .select("*", { count: "exact" })
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", user.tenant_id)
       .order(column, { ascending })
       .range(from, to);
 
@@ -142,6 +143,3 @@ export async function createUser(req: NextRequest, tenantId: string) {
     );
   }
 }
-
-export const GET = withTenant(getUsers);
-export const POST = withTenant(createUser)
