@@ -4,19 +4,18 @@ import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { updateUserSchema } from "@/lib/utils/validations/users";
 import { verifyToken } from "@/lib/auth/jwt";
 import { JWTPayload } from "@/types/auth";
-import { withTenant } from "@/lib/auth/withTenant";
+import { getAuthPayload } from "@/lib/auth/withAuthToken";
 
 type Params = { params: { id: string } };
 
 // ========== GET ==========
 export async function getUserById(
   req: NextRequest,
-  context: { params: Promise<{ id: string}> },
+  context: { params: Promise<{ id: string }> },
   tenantId: string
 ) {
   try {
     const { id } = await context.params; // ✅ await
-
 
     const { data, error } = await supabaseAdmin
       .from("users")
@@ -48,19 +47,14 @@ export async function updateUser(
   tenantId: string | undefined
 ) {
   try {
-    // 🔹 Extraer y validar token
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
+    const user = await getAuthPayload(req);
 
     // 🔹 Consultar rol real
     const { data: role } = await supabaseAdmin
       .from("user_roles")
       .select("code")
-      .eq("id", decoded.role_id)
-      .or(`tenant_id.eq.${decoded.tenant_id},tenant_id.is.null`)
+      .eq("id", user.role_id)
+      .or(`tenant_id.eq.${user.tenant_id},tenant_id.is.null`)
       .single();
 
     if (!role || role.code !== "admin") {
@@ -228,8 +222,3 @@ export async function deleteUser(
     );
   }
 }
-
-export const GET = withTenant(getUserById);
-export const PUT = withTenant(updateUser);
-export const DELETE = withTenant(deleteUser);
-

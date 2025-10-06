@@ -6,7 +6,7 @@ import {
   createUserSchema,
   parseSort,
 } from "@/lib/utils/validations/users";
-import { withTenant } from "@/lib/auth/withTenant";
+import { withTenant } from "@/lib/auth/withAuthTenant";
 
 async function getUsers(req: NextRequest, tenantId: string) {
   try {
