@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
 }
 
 // Create user (only ADMIN)
-export async function createUser(req: NextRequest, tenantId: string) {
+export async function createUser(req: NextRequest) {
   try {
     const body = await req.json();
     const payload = createUserSchema.parse(body);
