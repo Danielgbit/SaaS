@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { supabaseServer } from "@/lib/supabase/server";
 import { signToken } from "@/lib/auth/jwt";
-import { setAuthCookie } from "@/lib/auth/cookies";
+import { setAuthCookie } from "@/lib/auth/authCookies";
+import { authRole } from "@/lib/auth/authRole";
+import { authUserByEmail } from "@/lib/auth/authUserByEmail";
 
 export async function POST(req: Request) {
   try {
@@ -15,36 +17,12 @@ export async function POST(req: Request) {
       );
     }
 
-    // Buscar usuario en la tabla `users`
-    const { data: user, error } = await supabaseServer
-      .from("users")
-      .select("id, email, password_hash, tenant_id, role_id, is_active")
-      .eq("email", email)
-      .single();
+    const verifyRole = await authRole("admin");
+    if (verifyRole instanceof NextResponse) return verifyRole;
 
-    if (error || !user) {
-      return NextResponse.json(
-        { error: "Usuario no encontrado" },
-        { status: 401 }
-      );
-    }
+    const user = await authUserByEmail(email);
+    if (user instanceof NextResponse) return user
 
-    const { data: userRoles, error: rolesError } = await supabaseServer
-      .from("user_roles")
-      .select("code")
-      .eq("id", user.role_id)
-      .single();
-
-    if (rolesError) {
-      return NextResponse.json({
-        message: "Error al obtener roles de usuario",
-        status: 404,
-      });
-    }
-
-    if (!user.is_active) {
-      return NextResponse.json({ error: "Usuario inactivo" }, { status: 403 });
-    }
     // Verificar contraseña
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
@@ -60,7 +38,6 @@ export async function POST(req: Request) {
       email: user.email,
       tenant_id: user.tenant_id,
       role_id: user.role_id,
-      role: userRoles?.code || null,
     };
 
     //Firmar y crear el token

@@ -1,17 +1,18 @@
-import { jwtVerify } from "jose";
-import { getAuthCookie } from "./cookies";
+import { NextResponse } from "next/server";
 import { authTenant } from "./authTenant";
-
-const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+import { getAuthCookie } from "./authCookies";
+import { decodeJwt } from "jose";
+import { AuthUserProps } from "@/types/auth";
 
 export async function getAuthUser() {
   const token = await getAuthCookie();
   if (!token) {
-    throw new Error("No autorizado: falta el token");
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
-  const { payload } = await jwtVerify(token, secret);
 
-  authTenant(payload.tenant_id as string);
+  const payload = decodeJwt(token) as AuthUserProps;
+  const tenant = await authTenant(payload.tenant_id as string);
+  if (tenant instanceof NextResponse) return tenant;
 
   return payload;
 }

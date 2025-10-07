@@ -1,13 +1,26 @@
+import { NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "../supabase/server";
 
+export async function authTenant(tenantId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("tenants")
+    .select("id, is_active")
+    .eq("id", tenantId)
+    .single();
 
-export async function authTenant (tenantId: string) {
-    const { data } = await supabaseAdmin
-        .from("tenants")
-        .select("*")
-        .eq("id", tenantId)
+  if (error || !data) {
+    return NextResponse.json(
+      { error: "No autorizado: tenant no encontrado" },
+      { status: 401 }
+    );
+  }
 
-    console.log(data);
-    
-    
+  if (!data.is_active) {
+    return NextResponse.json(
+      { error: "No autorizado: tenant inactivo" },
+      { status: 401 }
+    );
+  }
+
+  return data;
 }

@@ -2,9 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { updateUserSchema } from "@/lib/utils/validations/users";
-import { verifyToken } from "@/lib/auth/jwt";
-import { JWTPayload } from "@/types/auth";
-import { getAuthPayload } from "@/lib/auth/withAuthToken";
+import { getAuthUser } from "@/lib/auth/authUser";
 
 type Params = { params: { id: string } };
 

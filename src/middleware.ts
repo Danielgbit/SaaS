@@ -22,16 +22,16 @@ export async function middleware(request: NextRequest) {
 
     // PASO 4: Si no hay token, bloqueamos
     if (!token) {
-      return NextResponse.json(
-        { error: "No autorizado: falta el token" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
     // PASO 5: Verificar si el token es válido
     try {
-      await jwtVerify(token, secret);
-      // Si es válido, dejamos pasar
+      const { payload } = await jwtVerify(token, secret);
+
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        return NextResponse.json({ error: "Token expirado" }, { status: 401 });
+      }
       
     } catch (err) {
       // Si es inválido, bloqueamos

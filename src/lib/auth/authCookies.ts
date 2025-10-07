@@ -1,4 +1,4 @@
-// src/lib/auth/cookies.ts
+// src/lib/auth/authCookies.ts
 import { cookies } from "next/headers";
 
 const TOKEN_NAME = "token";

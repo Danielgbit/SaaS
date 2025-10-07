@@ -2,8 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import {
-  listUsersSchema,
   createUserSchema,
+  listUsersSchema,
   parseSort,
 } from "@/lib/utils/validations/users";
 import { getAuthUser } from "@/lib/auth/authUser";
@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
     const to = page * limit - 1;
 
     const user = await getAuthUser();
+    if (user instanceof NextResponse) return user;
+
     // 4) Construir consulta
     let query = supabaseAdmin
       .from("users")
@@ -62,15 +64,15 @@ export async function createUser(req: NextRequest) {
     const body = await req.json();
     const payload = createUserSchema.parse(body);
 
-    const roleId = req.headers.get("x-role-id");
-    const userId = req.headers.get("x-user-id");
+    const user = await getAuthUser();
+    if (user instanceof NextResponse) return user;
 
     // 🔹 Validar que sea ADMIN
     const { data: role } = await supabaseAdmin
       .from("user_roles")
       .select("code")
-      .eq("id", roleId)
-      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+      .eq("id", user.role_id)
+      .or(`tenant_id.eq.${user.tenant_id},tenant_id.is.null`)
       .single();
 
     if (!role || role.code !== "admin") {
@@ -83,7 +85,7 @@ export async function createUser(req: NextRequest) {
         .from("user_roles")
         .select("id")
         .eq("id", payload.role_id)
-        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        .or(`tenant_id.eq.${user.},tenant_id.is.null`)
         .single();
 
       if (!roleToAssign) {
