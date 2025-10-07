@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { supabaseServer } from "@/lib/supabase/server";
+import { authUserByEmail } from "@/lib/auth/authUserByEmail";
 
 export async function POST(req: Request) {
   try {
-    const { email, password, name, phone, tenant_id, role_id } = await req.json();
+    const { email, password, name, phone, tenant_id, role_id } =
+      await req.json();
 
     // 1. Validar campos requeridos
     if (!email || !password) {
@@ -14,22 +15,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Verificar si el usuario ya existe
-    const { data: existingUser } = await supabaseServer
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (existingUser) {
-      return NextResponse.json(
-        { error: "El email ya está registrado" },
-        { status: 409 }
-      );
-    }
+    await authUserByEmail(email);
 
     // 3. Hashear la contraseña
-    const password_hash = await bcrypt.hash(password, 10);
+    const { data: authData, error: errorSignUp } =
+      await supabaseServer.auth.signUp({
+        email: email,
+        password: password,
+      });
+
+    if (errorSignUp || !authData.user) {
+      return NextResponse.json(
+        { error: "Error al registrar usuario" },
+        { status: 500 }
+      );
+    }
 
     // 4. Crear usuario en la BD
     const { data: newUser, error } = await supabaseServer
@@ -37,7 +37,6 @@ export async function POST(req: Request) {
       .insert([
         {
           email,
-          password_hash,
           name: name || null,
           phone: phone || null,
           tenant_id: tenant_id || null,

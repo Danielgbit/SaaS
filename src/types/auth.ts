@@ -1,5 +1,5 @@
 export interface AuthUserProps {
-  sub: string;
+  id: string;
   email: string;
   tenant_id: string;
   role_id: string;
@@ -8,7 +8,7 @@ export interface AuthUserProps {
 }
 
 export interface LoginResponseProps {
-  sub: string;
+  id: string;
   email: string;
   tenant_id: string;
   role_id: string;

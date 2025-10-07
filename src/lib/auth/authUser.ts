@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { authTenant } from "./authTenant";
 import { getAuthCookie } from "./authCookies";
-import { decodeJwt } from "jose";
 import { AuthUserProps } from "@/types/auth";
+import { verifyToken } from "./jwt";
 
 export async function getAuthUser() {
   const token = await getAuthCookie();
@@ -10,7 +10,7 @@ export async function getAuthUser() {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const payload = decodeJwt(token) as AuthUserProps;
+  const payload = verifyToken(token) as AuthUserProps;
   const tenant = await authTenant(payload.tenant_id as string);
   if (tenant instanceof NextResponse) return tenant;
 

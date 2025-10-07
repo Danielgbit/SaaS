@@ -1,27 +1,11 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import jwt from "jsonwebtoken";
+import { getAuthUser } from "@/lib/auth/authUser";
 
 export async function GET() {
   try {
-    // 1. Leer cookie "token"
-    const token = (await cookies()).get("token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "No autenticado" },
-        { status: 401 }
-      );
-    }
-
-    // 2. Verificar y decodificar token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
-
+    const user = await getAuthUser();
     // 3. Devolver payload del usuario
-    return NextResponse.json(
-      { user: decoded },
-      { status: 200 }
-    );
+    return NextResponse.json({ user: user }, { status: 200 });
   } catch (err: any) {
     console.error("Me error:", err);
 

@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { supabaseServer } from "@/lib/supabase/server";
 import { signToken } from "@/lib/auth/jwt";
 import { setAuthCookie } from "@/lib/auth/authCookies";
 import { authRole } from "@/lib/auth/authRole";
 import { authUserByEmail } from "@/lib/auth/authUserByEmail";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   try {
@@ -21,11 +20,15 @@ export async function POST(req: Request) {
     if (verifyRole instanceof NextResponse) return verifyRole;
 
     const user = await authUserByEmail(email);
-    if (user instanceof NextResponse) return user
+    if (user instanceof NextResponse) return user;
 
     // Verificar contraseña
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
+    const { data, error } = await supabaseServer.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (error || !data.session) {
       return NextResponse.json(
         { error: "Credenciales inválidas" },
         { status: 401 }
@@ -34,7 +37,7 @@ export async function POST(req: Request) {
 
     // Crear payload del JWT
     const payload = {
-      sub: user.id,
+      id: user.id,
       email: user.email,
       tenant_id: user.tenant_id,
       role_id: user.role_id,
