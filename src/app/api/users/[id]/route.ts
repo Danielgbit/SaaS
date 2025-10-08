@@ -3,22 +3,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { updateUserSchema } from "@/lib/utils/validations/users";
 import { getAuthUser } from "@/lib/auth/authUser";
+import { authAdmin } from "@/lib/auth/authRoles/authAdmin";
+import { logAudit } from "@/lib/auditLogger";
 
 type Params = { params: { id: string } };
 
 // ========== GET ==========
-export async function getUserById(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> },
-  tenantId: string
-) {
+export async function GET(context: { params: Promise<{ id: string }> }) {
   try {
+    const user = await authAdmin();
+    if (user instanceof NextResponse) return user; // Si no es admin o error
+
     const { id } = await context.params; // ✅ await
 
+    // Verificar que el usuario solicitado pertenezca al mismo tenant
     const { data, error } = await supabaseAdmin
       .from("users")
       .select("*")
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", user.tenant_id)
       .eq("id", id)
       .single();
 
@@ -39,26 +41,13 @@ export async function getUserById(
 }
 
 // ========== PUT ==========
-export async function updateUser(
+export async function PUT(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> },
-  tenantId: string | undefined
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getAuthPayload(req);
-
-    // 🔹 Consultar rol real
-    const { data: role } = await supabaseAdmin
-      .from("user_roles")
-      .select("code")
-      .eq("id", user.role_id)
-      .or(`tenant_id.eq.${user.tenant_id},tenant_id.is.null`)
-      .single();
-
-    if (!role || role.code !== "admin") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
+    const user = await authAdmin();
+    if (user instanceof NextResponse) return user; // Si no es admin o error
     // 🔹 Extraer params
     const { id } = await context.params;
 
@@ -67,7 +56,7 @@ export async function updateUser(
       .from("users")
       .select("id")
       .eq("id", id)
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", user.tenant_id)
       .single();
 
     if (!existingUser) {
@@ -87,7 +76,7 @@ export async function updateUser(
         .from("user_roles")
         .select("id")
         .eq("id", payload.role_id)
-        .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        .or(`tenant_id.eq.${user.tenant_id},tenant_id.is.null`)
         .single();
 
       if (!roleToAssign) {
@@ -98,19 +87,11 @@ export async function updateUser(
       }
     }
 
-    // 🔹 Hash de password si viene
-    let password_hash: string | undefined = undefined;
-    if (payload.password_hash) {
-      const bcrypt = await import("bcryptjs");
-      password_hash = await bcrypt.hash(payload.password_hash, 10);
-    }
-
     // 🔹 Actualizar usuario
-    const { data, error } = await supabaseAdmin
+    const { data: updateUser, error } = await supabaseAdmin
       .from("users")
       .update({
         email: payload.email ?? undefined,
-        password_hash,
         name: payload.name ?? undefined,
         role_id: payload.role_id ?? undefined,
         phone: payload.phone ?? undefined,
@@ -118,23 +99,28 @@ export async function updateUser(
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", user.tenant_id)
       .select("*")
       .single();
 
-    if (error) throw error;
+    if (error) return NextResponse.json({ error: "Error al actualizar usuario" }, { status: 500 });
 
-    // 🔹 Log de auditoría
-    await supabaseAdmin.from("audit_logs").insert({
-      tenant_id: tenantId,
-      user_id: decoded?.sub ?? null,
+    // 5️⃣ Registrar en auditoría
+    await logAudit({
+      tenant_id: user.tenant_id,
+      user_id: user.id, // quién realizó la acción
       action: "UPDATE",
       resource: "users",
-      resource_id: id,
-      payload,
+      resource_id: updateUser.id, // a quién afecta
+      payload: {
+        email: updateUser.email,
+        role_id: updateUser.role_id,
+        name: updateUser.name,
+        phone: updateUser.phone,
+      },
     });
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ updateUser }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message ?? "Internal error" },

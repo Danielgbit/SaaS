@@ -6,7 +6,8 @@ import {
   listUsersSchema,
   parseSort,
 } from "@/lib/utils/validations/users";
-import { getAuthUser } from "@/lib/auth/authUser";
+import { authAdmin } from "@/lib/auth/authRoles/authAdmin";
+import { logAudit } from "@/lib/auditLogger";
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,8 +22,8 @@ export async function GET(req: NextRequest) {
     const from = (page - 1) * limit;
     const to = page * limit - 1;
 
-    const user = await getAuthUser();
-    if (user instanceof NextResponse) return user;
+    const user = await authAdmin();
+    if (user instanceof NextResponse) return user; // Si no es admin o error
 
     // 4) Construir consulta
     let query = supabaseAdmin
@@ -59,42 +60,13 @@ export async function GET(req: NextRequest) {
 }
 
 // Create user (only ADMIN)
-export async function createUser(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const payload = createUserSchema.parse(body);
 
-    const user = await getAuthUser();
+    const user = await authAdmin();
     if (user instanceof NextResponse) return user;
-
-    // 🔹 Validar que sea ADMIN
-    const { data: role } = await supabaseAdmin
-      .from("user_roles")
-      .select("code")
-      .eq("id", user.role_id)
-      .or(`tenant_id.eq.${user.tenant_id},tenant_id.is.null`)
-      .single();
-
-    if (!role || role.code !== "admin") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    // Verificar que el role_id a asignar exista y esté disponible para el tenant
-    if (payload.role_id) {
-      const { data: roleToAssign } = await supabaseAdmin
-        .from("user_roles")
-        .select("id")
-        .eq("id", payload.role_id)
-        .or(`tenant_id.eq.${user.},tenant_id.is.null`)
-        .single();
-
-      if (!roleToAssign) {
-        return NextResponse.json(
-          { error: "El role_id proporcionado no es válido o no existe" },
-          { status: 400 }
-        );
-      }
-    }
 
     // 🔹 Hash contraseña si viene
     let password_hash = null;
@@ -103,10 +75,10 @@ export async function createUser(req: NextRequest) {
       password_hash = await bcrypt.hash(payload.password_hash, 10);
     }
 
-    const { data, error: insertError } = await supabaseAdmin
+    const { data: newUser, error: insertError } = await supabaseAdmin
       .from("users")
       .insert({
-        tenant_id: tenantId,
+        tenant_id: user.tenant_id,
         email: payload.email,
         password_hash,
         name: payload.name ?? null,
@@ -124,20 +96,22 @@ export async function createUser(req: NextRequest) {
       );
     }
 
-    await supabaseAdmin.from("audit_logs").insert({
-      tenant_id: tenantId,
-      user_id: userId ?? null,
+    // 5️⃣ Registrar en auditoría
+    await logAudit({
+      tenant_id: user.tenant_id,
+      user_id: user.id, // quién realizó la acción
       action: "CREATE",
       resource: "users",
-      resource_id: data.id,
+      resource_id: newUser.id, // a quién afecta
       payload: {
-        email: data.email,
-        role_id: data.role_id,
-        name: data.name,
+        email: newUser.email,
+        role_id: newUser.role_id,
+        name: newUser.name,
+        phone: newUser.phone,
       },
     });
 
-    return NextResponse.json({ data }, { status: 201 });
+    return NextResponse.json({ newUser }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message ?? "Internal error" },
