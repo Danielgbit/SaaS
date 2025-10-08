@@ -3,11 +3,13 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { ExistingUserProps } from "@/types/auth";
 
 export async function authUserByEmail(email: string) {
+  
   const { data: user, error } = await supabaseServer
     .from("users")
-    .select("id, email, password_hash, tenant_id, role_id, is_active")
+    .select("id, email, tenant_id, role_id, is_active")
     .eq("email", email)
     .single();
+
 
   if (error || !user) {
     return NextResponse.json(

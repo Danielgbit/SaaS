@@ -15,7 +15,6 @@ export interface LoginResponseProps {
 }
 
 export type ExistingUserProps = {
-  password_hash: string;
   id: string;
   email: string;
   tenant_id: string;

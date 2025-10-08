@@ -1,23 +1,32 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { signToken } from "@/lib/auth/jwt";
 import { setAuthCookie } from "@/lib/auth/authCookies";
-import { authRole } from "@/lib/auth/authRole";
 import { authUserByEmail } from "@/lib/auth/authUserByEmail";
 import { supabaseServer } from "@/lib/supabase/server";
+import { loginSchema } from "@/lib/utils/validations/auth";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
-
+    const body = await req.json();
+    
+    
+    // 2️⃣ Validar datos con Zod
+    const parseResult = loginSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: parseResult.error },
+        { status: 400 }
+      );
+    }
+    
+    const { email, password } = parseResult.data;
+    
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email y contraseña son requeridos" },
         { status: 400 }
       );
     }
-
-    const verifyRole = await authRole("admin");
-    if (verifyRole instanceof NextResponse) return verifyRole;
 
     const user = await authUserByEmail(email);
     if (user instanceof NextResponse) return user;
@@ -28,9 +37,10 @@ export async function POST(req: Request) {
       password: password,
     });
 
+
     if (error || !data.session) {
       return NextResponse.json(
-        { error: "Credenciales inválidas" },
+        { error: "Confirma tu email" },
         { status: 401 }
       );
     }

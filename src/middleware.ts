@@ -6,35 +6,38 @@ const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // PASO 1: Si es login/register/logout, dejamos pasar sin verificar token
-  if (
-    pathname.startsWith("/api/auth/login") ||
-    pathname.startsWith("/api/auth/register") ||
-    pathname.startsWith("/api/auth/logout")
-  ) {
-    return NextResponse.next();
-  }
+if (
+  pathname.includes("/api/auth/login") ||
+  pathname.includes("/api/auth/register") ||
+  pathname.includes("/api/auth/logout")
+) {
+  return NextResponse.next();
+}
 
-  // PASO 2: Solo verificamos tokens en rutas que empiecen con /api
+
+  // 2️⃣ Solo proteger rutas /api
   if (pathname.startsWith("/api")) {
-    // PASO 3: Buscar el token en las cookies
     const token = request.cookies.get("token")?.value;
 
-    // PASO 4: Si no hay token, bloqueamos
+    // 3️⃣ Si no hay token
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    // PASO 5: Verificar si el token es válido
     try {
+      // 4️⃣ Verificar token
       const { payload } = await jwtVerify(token, secret);
 
+      // 5️⃣ Verificar expiración (extra)
       if (payload.exp && payload.exp * 1000 < Date.now()) {
         return NextResponse.json({ error: "Token expirado" }, { status: 401 });
       }
-      
+
+      // Si todo bien, continúa
+      return NextResponse.next();
+
     } catch (err) {
-      // Si es inválido, bloqueamos
+      console.error("JWT inválido o expirado:", err);
       return NextResponse.json(
         { error: "Token inválido o expirado" },
         { status: 401 }
@@ -42,10 +45,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // PASO 6: Dejar pasar a la ruta solicitada
+  // 6️⃣ Dejar pasar todo lo demás
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: ["/api/:path*"],
 };

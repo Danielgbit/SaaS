@@ -3,9 +3,9 @@ import { clearAuthCookie } from "@/lib/auth/authCookies";
 
 export async function POST() {
   try {
-    clearAuthCookie();
-
-    return NextResponse.json({ message: "Logout exitoso" }, { status: 200 });
+    const res = NextResponse.json({ message: "Logout exitoso" }, { status: 200 });
+    await clearAuthCookie(res);
+    return res;
   } catch (err: any) {
     console.error("Logout error:", err);
     return NextResponse.json(

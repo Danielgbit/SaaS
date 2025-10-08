@@ -1,5 +1,5 @@
 // lib/auth/requireRole.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { getAuthUser } from "./authUser";
 import { RoleCodeProps } from "@/types/auth";

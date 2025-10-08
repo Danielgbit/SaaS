@@ -20,15 +20,13 @@ export async function getAuthCookie(): Promise<string | undefined> {
   return (await cookies()).get(TOKEN_NAME)?.value;
 }
 
-// Elimina el token de forma segura
-export async function clearAuthCookie() {
+export async function clearAuthCookie(response: Response) {
   const cookieStore = await cookies();
-  
-  cookieStore.set(TOKEN_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0, // Fecha de expiración inmediata
-    path: "/",
-  });
+
+  response.headers.set(
+    "Set-Cookie",
+    `${TOKEN_NAME}=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; ${
+      process.env.NODE_ENV === "production" ? "Secure;" : ""
+    }`
+  );
 }

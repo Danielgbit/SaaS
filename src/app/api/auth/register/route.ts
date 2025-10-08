@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { authUserByEmail } from "@/lib/auth/authUserByEmail";
+import { registerSchema } from "@/lib/utils/validations/auth";
 
 export async function POST(req: Request) {
   try {
+    const body = await req.json();
+
+    // 2️⃣ Validar usando el esquema
+    const parseResult = registerSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: parseResult.error },
+        { status: 400 }
+      );
+    }
+
     const { email, password, name, phone, tenant_id, role_id } =
-      await req.json();
+      parseResult.data;
 
     // 1. Validar campos requeridos
     if (!email || !password) {
