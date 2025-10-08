@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { authUserByEmail } from "@/lib/auth/authUserByEmail";
 import { registerSchema } from "@/lib/utils/validations/auth";
+import { logAudit } from "@/lib/auditLogger";
 
 export async function POST(req: Request) {
   try {
@@ -66,6 +67,18 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    // Registrar en auditoría
+    const audit = await logAudit({
+      tenant_id: newUser.tenant_id,
+      user_id: newUser.id, // quién realizó la acción
+      action: "REGISTER",
+      resource: "registro",
+      resource_id: newUser.id, // a quién afecta
+      payload: {
+        ... newUser.id[0],
+      },
+    });
 
     // 5. Responder con éxito (sin devolver el password_hash)
     return NextResponse.json(

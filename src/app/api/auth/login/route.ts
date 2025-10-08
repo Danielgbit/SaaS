@@ -9,8 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     
-    
-    // 2️⃣ Validar datos con Zod
+    // Validar datos con Zod
     const parseResult = loginSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json(

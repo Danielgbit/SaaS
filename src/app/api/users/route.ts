@@ -96,12 +96,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5️⃣ Registrar en auditoría
-    await logAudit({
+    // Registrar en auditoría
+    const audit = await logAudit({
       tenant_id: user.tenant_id,
       user_id: user.id, // quién realizó la acción
       action: "CREATE",
-      resource: "users",
+      resource: "Se creo un usuario",
       resource_id: newUser.id, // a quién afecta
       payload: {
         email: newUser.email,
@@ -110,6 +110,10 @@ export async function POST(req: NextRequest) {
         phone: newUser.phone,
       },
     });
+
+    if (audit instanceof NextResponse) {
+      return audit;
+    }
 
     return NextResponse.json({ newUser }, { status: 201 });
   } catch (err: any) {

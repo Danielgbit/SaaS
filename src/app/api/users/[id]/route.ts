@@ -2,7 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
 import { updateUserSchema } from "@/lib/utils/validations/users";
-import { getAuthUser } from "@/lib/auth/authUser";
 import { authAdmin } from "@/lib/auth/authRoles/authAdmin";
 import { logAudit } from "@/lib/auditLogger";
 
@@ -103,14 +102,18 @@ export async function PUT(
       .select("*")
       .single();
 
-    if (error) return NextResponse.json({ error: "Error al actualizar usuario" }, { status: 500 });
+    if (error)
+      return NextResponse.json(
+        { error: "Error al actualizar usuario" },
+        { status: 500 }
+      );
 
     // 5️⃣ Registrar en auditoría
-    await logAudit({
+    const audit = await logAudit({
       tenant_id: user.tenant_id,
       user_id: user.id, // quién realizó la acción
       action: "UPDATE",
-      resource: "users",
+      resource: "Se actualizo un usuario",
       resource_id: updateUser.id, // a quién afecta
       payload: {
         email: updateUser.email,
@@ -119,6 +122,10 @@ export async function PUT(
         phone: updateUser.phone,
       },
     });
+
+    if (audit instanceof NextResponse) {
+      return audit;
+    }
 
     return NextResponse.json({ updateUser }, { status: 200 });
   } catch (err: any) {
@@ -130,39 +137,23 @@ export async function PUT(
 }
 
 // ========== DELETE ==========
-export async function deleteUser(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> },
-  tenantId: string
-) {
+export async function deleteUser(context: { params: Promise<{ id: string }> }) {
   try {
-    const roleId = req.headers.get("x-role-id");
-    const userId = req.headers.get("x-user-id");
-    // 🔹 Consultar el rol del usuario autenticado
-    const { data: role, error: roleError } = await supabaseAdmin
-      .from("user_roles")
-      .select("code")
-      .eq("id", roleId)
-      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
-      .single();
-
-    if (roleError || !role) {
-      return NextResponse.json({ error: "Rol no encontrado" }, { status: 403 });
-    }
-
-    // 🔹 Validar que el rol sea ADMIN
-    if (role.code !== "admin") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+    const authUser = await authAdmin();
+    if (authUser instanceof NextResponse) return authUser; // Si no es admin o error
 
     // 🔹 Proceder con el borrado
     const { id } = await context.params;
 
-    const { error, data, count } = await supabaseAdmin
+    const {
+      error,
+      data: userDelete,
+      count,
+    } = await supabaseAdmin
       .from("users")
       .delete()
       .eq("id", id)
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", authUser.tenant_id)
       .select("*"); // para ver si devuelve algo
 
     if (error) {
@@ -172,33 +163,23 @@ export async function deleteUser(
       );
     }
 
-    const { error: auditError } = await supabaseAdmin
-      .from("audit_logs")
-      .insert({
-        tenant_id: tenantId,
-        user_id: userId, // el admin que ejecuta
-        action: "delete",
-        resource: "users",
-        resource_id: id, // el usuario eliminado
-        payload: {
-          deleted_user_id: id,
-          deleted_role: role.code,
-          deleted_at: new Date().toISOString(),
-        },
-      });
+    // Registrar en auditoría
+    const audit = await logAudit({
+      tenant_id: authUser.tenant_id,
+      user_id: authUser.id, // quién realizó la acción
+      action: "DELETE",
+      resource: "Se elimino un usuario",
+      resource_id: id, // a quién afecta
+      payload: {
+        ...userDelete[0],
+      },
+    });
 
-    if (auditError) {
-      console.error("Error audit log:", auditError);
+    if (audit instanceof NextResponse) {
+      return audit;
     }
 
-    if (auditError) {
-      return NextResponse.json(
-        { error: "Error registro de auditoría" },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message ?? "Internal error" },
