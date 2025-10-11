@@ -1,7 +1,6 @@
 // app/api/tenants/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
-import { verifyToken } from "@/lib/auth/jwt";
 import { createTenantSchema } from "@/lib/utils/validations/tenants"; // 🔹 define tu schema con zod
 import { authAdmin } from "@/lib/auth/authRoles/authAdmin";
 import { logAudit } from "@/lib/auditLogger";

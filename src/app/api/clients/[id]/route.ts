@@ -1,11 +1,9 @@
 // app/api/clients/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer as supabaseAdmin } from "@/lib/supabase/server";
-import { verifyToken } from "@/lib/auth/jwt";
-import { JWTPayload } from "@/types/auth";
-import { resolveTenantId } from "@/lib/auth/resolveTenantId";
 import { updateClientSchema } from "@/lib/utils/validations/clients";
-import { headers } from "next/headers";
+import { authAdmin } from "@/lib/auth/authRoles/authAdmin";
+import { logAudit } from "@/lib/auditLogger";
 
 // ========== GET: Obtener cliente por ID ==========
 export async function GET(
@@ -15,47 +13,15 @@ export async function GET(
   try {
     const clientId = params.id;
 
-    // 1) Resolver tenant
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "Tenant ID no encontrado" },
-        { status: 401 }
-      );
-    }
+    // 1) Verificar autenticación y autorización
+    const userAdmin = await authAdmin();
+    if (userAdmin instanceof NextResponse) return userAdmin;
 
-    // 2) Verificar token
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    // 3) Validar rol
-    const { data: role, error: roleErr } = await supabaseAdmin
-      .from("user_roles")
-      .select("code, tenant_id")
-      .eq("id", decoded.role_id)
-      .single();
-
-    if (roleErr || !role) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    const allowedRoles = ["admin", "tenant_owner"];
-    const isAllowed =
-      allowedRoles.includes(role.code) &&
-      (role.tenant_id === null || role.tenant_id === tenantId);
-
-    if (!isAllowed) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    // 4) Traer cliente específico
+    // 2) Traer cliente específico
     const { data, error } = await supabaseAdmin
       .from("clients")
       .select("*")
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", userAdmin.tenant_id)
       .eq("id", clientId)
       .single();
 
@@ -66,7 +32,7 @@ export async function GET(
       );
     }
 
-    // 5) Responder
+    // 3) Responder
     return NextResponse.json({ data }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
@@ -79,60 +45,27 @@ export async function GET(
 // ========== PUT: Actualizar cliente ==========
 export async function PUT(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await context.params;
-    const clientId = id;
+    const clientId = params.id;
 
-    // 1) Resolver tenant
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "Tenant ID no encontrado" },
-        { status: 401 }
-      );
-    }
+    // 1) Verificar autenticación y autorización
+    const userAdmin = await authAdmin();
+    if (userAdmin instanceof NextResponse) return userAdmin;
 
-    // 2) Verificar token
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    // 3) Validar rol
-    const { data: role, error: roleErr } = await supabaseAdmin
-      .from("user_roles")
-      .select("code, tenant_id")
-      .eq("id", decoded.role_id)
-      .single();
-
-    if (roleErr || !role) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    const allowedRoles = ["admin", "tenant_owner"];
-    const isAllowed =
-      allowedRoles.includes(role.code) &&
-      (role.tenant_id === null || role.tenant_id === tenantId);
-
-    if (!isAllowed) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    // 4) Validar body
+    // 2) Validar body
     const body = await req.json();
     const payload = updateClientSchema.parse(body);
 
-    // 5) Actualizar cliente
+    // 3) Actualizar cliente
     const { data, error } = await supabaseAdmin
       .from("clients")
       .update({
         ...payload,
         updated_at: new Date().toISOString(),
       })
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", userAdmin.tenant_id)
       .eq("id", clientId)
       .select("*")
       .single();
@@ -144,9 +77,29 @@ export async function PUT(
       );
     }
 
-    // 6) Responder
+    // 4) Registrar en auditoría
+    const audit = await logAudit({
+      tenant_id: userAdmin.tenant_id,
+      user_id: userAdmin.id,
+      action: "UPDATE",
+      resource: "Se actualizó un cliente",
+      resource_id: data.id,
+      payload: {
+        ...data,
+      },
+    });
+
+    if (audit instanceof NextResponse) return audit;
+
+    // 5) Responder
     return NextResponse.json({ data }, { status: 200 });
   } catch (err: any) {
+    if (err?.name === "ZodError") {
+      return NextResponse.json(
+        { error: err.errors ?? err.message },
+        { status: 422 }
+      );
+    }
     return NextResponse.json(
       { error: err.message ?? "Internal error" },
       { status: 500 }
@@ -157,57 +110,54 @@ export async function PUT(
 // ========== DELETE: Eliminar cliente ==========
 export async function DELETE(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await context.params;
-    const clientId = id;
-    // 1) Resolver tenant
-    const tenantId = resolveTenantId(req);
-    if (!tenantId) {
+    const clientId = params.id;
+
+    // 1) Verificar autenticación y autorización
+    const userAdmin = await authAdmin();
+    if (userAdmin instanceof NextResponse) return userAdmin;
+
+    // 2) Obtener datos del cliente antes de eliminar para auditoría
+    const { data: clientData, error: fetchError } = await supabaseAdmin
+      .from("clients")
+      .select("*")
+      .eq("tenant_id", userAdmin.tenant_id)
+      .eq("id", clientId)
+      .single();
+
+    if (fetchError || !clientData) {
       return NextResponse.json(
-        { error: "Tenant ID no encontrado" },
-        { status: 401 }
+        { error: "Cliente no encontrado" },
+        { status: 404 }
       );
     }
 
-    // 2) Verificar token
-    const token = req.cookies.get("token")?.value;
-    const decoded = token ? verifyToken<JWTPayload>(token) : null;
-    if (!decoded) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    // 3) Validar rol (solo admin o receptionist deberían poder eliminar)
-    const { data: role, error: roleErr } = await supabaseAdmin
-      .from("user_roles")
-      .select("code, tenant_id")
-      .eq("id", decoded.role_id)
-      .single();
-
-    if (roleErr || !role) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    const allowedRoles = ["admin", "receptionist"];
-    const isAllowed =
-      allowedRoles.includes(role.code) &&
-      (role.tenant_id === null || role.tenant_id === tenantId);
-
-    if (!isAllowed) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    // 4) Eliminar cliente
+    // 3) Eliminar cliente
     const { error } = await supabaseAdmin
       .from("clients")
       .delete()
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", userAdmin.tenant_id)
       .eq("id", clientId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // 4) Registrar en auditoría
+    const audit = await logAudit({
+      tenant_id: userAdmin.tenant_id,
+      user_id: userAdmin.id,
+      action: "DELETE",
+      resource: "Se eliminó un cliente",
+      resource_id: clientId,
+      payload: {
+        ...clientData,
+      },
+    });
+
+    if (audit instanceof NextResponse) return audit;
 
     // 5) Respuesta
     return NextResponse.json(
