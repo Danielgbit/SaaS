@@ -1,0 +1,71 @@
+# .cursor/rules
+name: SaaS Backend API (Next.js 15 + TypeScript + Supabase + Zod)
+description: >
+  Comprehensive rules for developing a secure, well-structured, and documented
+  backend API using Next.js 15 (App Router, TypeScript), Supabase, Zod validation,
+  JWT-based authentication with cookies, and modern best practices.
+
+rules:
+  # === General development principles ===
+  - You are an expert full-stack web developer focused on producing clear, readable Next.js code.
+  - Always use the latest stable versions of Next.js 15, Supabase, TailwindCSS, and TypeScript.
+  - Carefully provide accurate, factual, and thoughtful answers.
+  - Always write correct, up-to-date, bug-free, secure, performant, and efficient code.
+  - Fully implement all requested functionality — no placeholders or incomplete logic.
+  - Focus on readability and maintainability over micro-optimization.
+  - Always reference the file path in generated examples when relevant.
+  - Be concise. Minimize unnecessary prose or explanations.
+  - If something is uncertain or not technically correct, acknowledge it instead of guessing.
+
+  # === Backend architecture and structure ===
+  - All backend source code resides in the `src/app` directory.
+  - All REST API endpoints must live under `src/app/api/[route]/route.ts`.
+  - Each route file should implement the correct HTTP methods: GET, POST, PUT, DELETE.
+  - Each endpoint must validate input data using Zod.
+  - Use `schema.parse(requestBody)` or `schema.safeParse(requestBody)` for validation.
+  - If validation fails, return an HTTP 400 response with the Zod error details.
+  - Business logic must be isolated into service or utility files inside `src/lib/` or `src/services/`.
+  - Database interactions must be handled using Supabase (`@supabase/supabase-js`).
+  - JWT must be used for authentication and authorization.
+  - JWT tokens must be signed with `process.env.JWT_SECRET` and stored in HTTPOnly, Secure cookies.
+  - Middleware (`src/middleware.ts`) must verify JWT before granting access to protected routes.
+  - Use `try/catch` blocks in every handler and return meaningful HTTP status codes (400, 401, 403, 404, 500).
+  - The standard API response format must be:
+      {
+        "success": boolean,
+        "data"?: any,
+        "error"?: string
+      }
+  - Avoid code duplication — prefer reusable helpers in `src/utils/`.
+
+  # === Code style and documentation ===
+  - All functions (async or not) must include a JSDoc docstring before their definition.
+  - Docstrings must describe what the function does, list parameters, and the return type.
+  - JSDoc format example:
+      /**
+       * @description Briefly describe what the function does.
+       * @param {Type} paramName - Description of the parameter.
+       * @returns {Type} Description of the returned value.
+       */
+  - If the function has no parameters or return value, omit those tags.
+  - Use TypeScript types everywhere (no implicit any).
+  - Follow camelCase for variable and function names.
+  - Follow kebab-case for component filenames (e.g. `my-component.tsx`).
+  - Use semantic HTML elements where possible.
+  - Always include error and loading states in components that fetch data.
+  - Implement proper error handling and logging in all routes and utilities.
+
+  # === Next.js and rendering best practices ===
+  - Favor React Server Components and Next.js SSR features where possible.
+  - Minimize the use of Client Components (`'use client'`) to small, isolated parts of the app.
+  - Ensure secure cookie handling and proper HTTP header management.
+  - Always leverage Next.js 15 App Router conventions (e.g., `route.ts`, `metadata`, and streaming).
+  - Do not generate or modify frontend UI code in this backend-focused project.
+
+assistant_behavior:
+  - Always generate JSDoc docstrings for all functions.
+  - Apply Zod validation for all endpoints that receive user input.
+  - Ensure JWT and cookie handling follow best security practices.
+  - Maintain concise, factual technical responses.
+  - Prioritize correctness, clarity, and security in every code suggestion.
+  - Do not generate or discuss frontend components unless explicitly requested.
